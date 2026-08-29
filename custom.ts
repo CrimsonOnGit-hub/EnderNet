@@ -31,6 +31,9 @@ namespace Endernet {
     let httpBaseUrl = "";
     let clientId = "";
 
+    // Lets disconnect() cancel an in-flight pairing poll loop.
+    let sessionToken = 0;
+
     let messageHandler: (msg: string, from: string) => void = null;
     let joinHandler: (player: string) => void = null;
     let leaveHandler: (player: string) => void = null;
@@ -44,7 +47,14 @@ namespace Endernet {
     export function initSecureSession(hostUrl: string): void {
         httpBaseUrl = hostUrl;
 
+        // Bump the token so any previous pairing loop (or connection)
+        // recognizes it's stale and stops acting.
+        sessionToken++;
+        let myToken = sessionToken;
+
         httpPost("/api/auth/request-code", "{}", function (body: string, status: number) {
+            if (myToken !== sessionToken) return;
+
             if (status === 200) {
                 let res = JSON.parse(body);
                 let code = res.code;
@@ -58,10 +68,12 @@ namespace Endernet {
                 let isHandshakeComplete = false;
 
                 let pollStatus = function () {
-                    if (isHandshakeComplete) return;
+                    if (myToken !== sessionToken || isHandshakeComplete) return;
 
                     httpGet("/api/auth/status/" + code, function (statusBody: string, sStatus: number) {
-                        if (sStatus === 200 && !isHandshakeComplete) {
+                        if (myToken !== sessionToken || isHandshakeComplete) return;
+
+                        if (sStatus === 200) {
                             let sessionData = JSON.parse(statusBody);
                             if (sessionData.status === "claimed") {
                                 isHandshakeComplete = true;
@@ -138,11 +150,7 @@ namespace Endernet {
     export function pearlThrow(worldId: string): void {
         if (pearlSource) pearlSource.close();
 
-        let hasSlash = httpBaseUrl.charAt(httpBaseUrl.length - 1) === "/";
-        let streamUrl = hasSlash
-            ? httpBaseUrl + "pearl/stream/" + worldId
-            : httpBaseUrl + "/pearl/stream/" + worldId;
-
+        let streamUrl = joinUrl(httpBaseUrl, "pearl/stream/" + worldId);
         pearlSource = new EventSource(streamUrl);
 
         pearlSource.onmessage = function (ev: any) {
@@ -177,14 +185,48 @@ namespace Endernet {
      */
     //% block="disconnect EnderNet"
     export function disconnect(): void {
-        if (ws) ws.close();
-        if (pearlSource) pearlSource.close();
+        // Invalidate any in-flight pairing poll / pending requests.
+        sessionToken++;
+
+        if (ws) {
+            ws.onopen = null;
+            ws.onmessage = null;
+            ws.onclose = null;
+            ws.onerror = null;
+            ws.close();
+        }
+        if (pearlSource) {
+            pearlSource.onmessage = null;
+            pearlSource.onerror = null;
+            pearlSource.close();
+        }
         ws = null;
         pearlSource = null;
+
+        messageHandler = null;
+        joinHandler = null;
+        leaveHandler = null;
+        pearlStreamHandler = null;
+        pearlErrorHandler = null;
+    }
+
+    // Joins a base URL and a path with exactly one slash between them,
+    // regardless of whether either side already has one.
+    function joinUrl(base: string, path: string): string {
+        let baseHasSlash = base.charAt(base.length - 1) === "/";
+        let pathHasSlash = path.charAt(0) === "/";
+
+        if (baseHasSlash && pathHasSlash) {
+            return base + path.substr(1);
+        } else if (!baseHasSlash && !pathHasSlash) {
+            return base + "/" + path;
+        } else {
+            return base + path;
+        }
     }
 
     function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
-        let target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
+        let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, { method: "GET" })
             .then(function (res: any) {
                 let status = res.status;
@@ -198,7 +240,7 @@ namespace Endernet {
     }
 
     function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
-        let target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
+        let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -217,11 +259,14 @@ namespace Endernet {
 
     function wsConnect(url: string, id: string, worldId: string): void {
         if (ws) ws.close();
+        let myToken = sessionToken;
+
         clientId = id;
         currentWorldId = worldId;
         ws = new WebSocket(url);
 
         ws.onopen = function () {
+            if (myToken !== sessionToken) return;
             if (ws.readyState === 1) {
                 ws.send(JSON.stringify({
                     type: "join_world",
@@ -232,6 +277,7 @@ namespace Endernet {
         };
 
         ws.onmessage = function (ev: any) {
+            if (myToken !== sessionToken) return;
             try {
                 let data = JSON.parse(ev.data);
                 if (data.type === "player_join") {
@@ -244,6 +290,16 @@ namespace Endernet {
             } catch (e) {
                 if (messageHandler) messageHandler(ev.data, "raw");
             }
+        };
+
+        ws.onerror = function (err: any) {
+            if (myToken !== sessionToken) return;
+            player.say("§c[EnderNet] Connection error.");
+        };
+
+        ws.onclose = function () {
+            if (myToken !== sessionToken) return;
+            player.say("§c[EnderNet] Disconnected from server.");
         };
     }
 }

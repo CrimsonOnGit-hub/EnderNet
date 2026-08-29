@@ -11,9 +11,7 @@
         "README.md",
         "custom.ts"
     ],
-    "testFiles": [
-        "test.ts"
-    ],
+    "testFiles": [],
     "targetVersions": {
         "target": "2.1.27",
         "targetId": "minecraft"
