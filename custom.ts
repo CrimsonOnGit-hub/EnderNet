@@ -24,7 +24,7 @@ declare function setTimeout(handler: () => void, timeout: number): number;
  * Custom blocks for EnderNet
  */
 //% weight=100 color="#5a5cff" icon="\uf233" block="EnderNet"
-//% groups='["Connection", "Messaging", "Pearl Stream"]'
+//% groups='["Connection", "Messaging", "Pearl Stream", "HTTP Requests"]'
 namespace Endernet {
     // ---- Shared connection state ----
     let ws: WebSocket = null;
@@ -229,7 +229,7 @@ namespace Endernet {
         pearlErrorHandler = handler;
     }
 
-    // ==================== Internal helpers (no blocks) ====================
+    // ==================== HTTP Requests ====================
 
     // Joins a base URL and a path with exactly one slash between them,
     // regardless of whether either side already has one.
@@ -246,7 +246,13 @@ namespace Endernet {
         }
     }
 
-    function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
+    /**
+     * Send a GET request to a path on the EnderNet server (or a full URL)
+     */
+    //% block="HTTP GET %url and store response in %onResponse"
+    //% draggableParameters="reporter"
+    //% group="HTTP Requests"
+    export function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
         let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, { method: "GET" })
             .then(function (res: any) {
@@ -260,7 +266,13 @@ namespace Endernet {
             });
     }
 
-    function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
+    /**
+     * Send a POST request with a body to a path on the EnderNet server (or a full URL)
+     */
+    //% block="HTTP POST %url with body %body and store response in %onResponse"
+    //% draggableParameters="reporter"
+    //% group="HTTP Requests"
+    export function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
         let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, {
             method: "POST",
@@ -277,6 +289,8 @@ namespace Endernet {
                 if (onResponse) onResponse("Error: " + err, 0);
             });
     }
+
+    // ==================== Internal helpers (no blocks) ====================
 
     function wsConnect(url: string, id: string, worldId: string): void {
         if (ws) ws.close();
