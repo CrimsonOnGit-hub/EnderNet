@@ -1,1 +1,4 @@
-// supposed to be empty.
+/**
+ * supposed to be empty.
+ */
+player.say("pluh")

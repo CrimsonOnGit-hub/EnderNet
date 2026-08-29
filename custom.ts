@@ -16,46 +16,39 @@ declare class EventSource {
     onerror: (err: any) => void;
 }
 
-declare function setTimeout(handler: () => void, timeout: number): number;
 declare const JSON: any;
 declare const fetch: any;
+declare function setTimeout(handler: () => void, timeout: number): number;
 
-//% color="#5a5cff" icon="\uf233" weight=100 block="EnderNet"
+/**
+ * Custom blocks for EnderNet
+ */
+//% weight=100 color="#5a5cff" icon="\uf233" block="EnderNet"
 namespace Endernet {
-
-    export let currentWorldId = "default_world";
-    export let httpBaseUrl = "";
-
-    export let ws: WebSocket = null;
-    export let clientId = "";
-
-    export let lastReceivedMessage = "";
-    export let lastReceivedSender = "";
-    export let lastJoinedPlayer = "";
-    export let lastLeftPlayer = "";
-    export let lastPearlData = "";
-    export let lastPearlError = "";
-
-    let wsMsgHandler: () => void = null;
-    let wsJoinHandler: () => void = null;
-    let wsLeaveHandler: () => void = null;
-    let pearlStreamHandler: () => void = null;
-    let pearlErrorHandler: () => void = null;
-
+    let ws: WebSocket = null;
     let pearlSource: EventSource = null;
+    let currentWorldId = "default_world";
+    let httpBaseUrl = "";
+    let clientId = "";
 
+    let messageHandler: (msg: string, from: string) => void = null;
+    let joinHandler: (player: string) => void = null;
+    let leaveHandler: (player: string) => void = null;
+    let pearlStreamHandler: (data: string) => void = null;
+    let pearlErrorHandler: (err: string) => void = null;
+
+    /**
+     * Connect to secure EnderNet server
+     */
     //% block="connect secure EnderNet on server %hostUrl"
-    //% blockNamespace="EnderNet"
-    //% hostUrl.defl="https://endernet-server-273220767084.europe-west1.run.app"
-    //% weight=100
     export function initSecureSession(hostUrl: string): void {
         httpBaseUrl = hostUrl;
 
         httpPost("/api/auth/request-code", "{}", function (body: string, status: number) {
             if (status === 200) {
-                const res = JSON.parse(body);
-                const code = res.code;
-                const claimUrl = res.claimUrl;
+                let res = JSON.parse(body);
+                let code = res.code;
+                let claimUrl = res.claimUrl;
 
                 player.say("§d[EnderNet] Pairing code required!");
                 player.say("§eLink your MEE identity here:");
@@ -64,20 +57,20 @@ namespace Endernet {
 
                 let isHandshakeComplete = false;
 
-                function pollStatus() {
+                let pollStatus = function () {
                     if (isHandshakeComplete) return;
 
                     httpGet("/api/auth/status/" + code, function (statusBody: string, sStatus: number) {
                         if (sStatus === 200 && !isHandshakeComplete) {
-                            const sessionData = JSON.parse(statusBody);
+                            let sessionData = JSON.parse(statusBody);
                             if (sessionData.status === "claimed") {
                                 isHandshakeComplete = true;
-                                const realTag = sessionData.verifiedGamertag;
-                                const world = sessionData.worldId;
+                                let realTag = sessionData.verifiedGamertag;
+                                let world = sessionData.worldId;
 
                                 player.say("§a[EnderNet] Verified as §f" + realTag + " §ain world §f" + world);
 
-                                const wsUrl = hostUrl.replace("https://", "wss://").replace("http://", "ws://");
+                                let wsUrl = hostUrl.replace("https://", "wss://").replace("http://", "ws://");
                                 wsConnect(wsUrl, realTag, world);
                                 return;
                             }
@@ -87,7 +80,7 @@ namespace Endernet {
                             setTimeout(pollStatus, 3000);
                         }
                     });
-                }
+                };
 
                 setTimeout(pollStatus, 3000);
             } else {
@@ -96,10 +89,10 @@ namespace Endernet {
         });
     }
 
+    /**
+     * Broadcast a message to the server
+     */
     //% block="broadcast message %msg"
-    //% blockNamespace="EnderNet"
-    //% msg.defl="Hello from MakeCode!"
-    //% weight=90
     export function wsSend(msg: string): void {
         if (ws && ws.readyState === 1) {
             ws.send(JSON.stringify({
@@ -111,112 +104,90 @@ namespace Endernet {
         }
     }
 
+    /**
+     * Event triggered when a message is received
+     */
     //% block="on message received"
-    //% blockNamespace="EnderNet"
-    //% weight=85
-    export function onMessageReceived(handler: () => void): void {
-        wsMsgHandler = handler;
+    //% draggableParameters="reporter"
+    export function onMessageReceived(handler: (msg: string, fromUser: string) => void): void {
+        messageHandler = handler;
     }
 
-    //% block="last received message"
-    //% blockNamespace="EnderNet"
-    //% weight=84
-    export function getLastMessage(): string {
-        return lastReceivedMessage;
-    }
-
-    //% block="last received sender"
-    //% blockNamespace="EnderNet"
-    //% weight=83
-    export function getLastSender(): string {
-        return lastReceivedSender;
-    }
-
+    /**
+     * Event triggered when a player joins
+     */
     //% block="on player joined"
-    //% blockNamespace="EnderNet"
-    //% weight=80
-    export function onPlayerJoined(handler: () => void): void {
-        wsJoinHandler = handler;
+    //% draggableParameters="reporter"
+    export function onPlayerJoined(handler: (joinedPlayer: string) => void): void {
+        joinHandler = handler;
     }
 
-    //% block="last joined player"
-    //% blockNamespace="EnderNet"
-    //% weight=79
-    export function getLastJoinedPlayer(): string {
-        return lastJoinedPlayer;
-    }
-
+    /**
+     * Event triggered when a player leaves
+     */
     //% block="on player left"
-    //% blockNamespace="EnderNet"
-    //% weight=75
-    export function onPlayerLeft(handler: () => void): void {
-        wsLeaveHandler = handler;
+    //% draggableParameters="reporter"
+    export function onPlayerLeft(handler: (leftPlayer: string) => void): void {
+        leaveHandler = handler;
     }
 
-    //% block="last left player"
-    //% blockNamespace="EnderNet"
-    //% weight=74
-    export function getLastLeftPlayer(): string {
-        return lastLeftPlayer;
-    }
-
+    /**
+     * Throw a Pearl stream to a world
+     */
     //% block="throw Pearl stream to world %worldId"
-    //% blockNamespace="EnderNet"
-    //% weight=70
     export function pearlThrow(worldId: string): void {
         if (pearlSource) pearlSource.close();
 
-        const hasSlash = httpBaseUrl.charAt(httpBaseUrl.length - 1) === "/";
-        const streamUrl = hasSlash
+        let hasSlash = httpBaseUrl.charAt(httpBaseUrl.length - 1) === "/";
+        let streamUrl = hasSlash
             ? httpBaseUrl + "pearl/stream/" + worldId
             : httpBaseUrl + "/pearl/stream/" + worldId;
 
         pearlSource = new EventSource(streamUrl);
 
         pearlSource.onmessage = function (ev: any) {
-            lastPearlData = ev.data;
-            if (pearlStreamHandler) pearlStreamHandler();
+            if (pearlStreamHandler) pearlStreamHandler(ev.data);
         };
 
         pearlSource.onerror = function (err: any) {
-            lastPearlError = "Endermite spawned: Stream error";
-            if (pearlErrorHandler) pearlErrorHandler();
+            if (pearlErrorHandler) pearlErrorHandler("Endermite spawned: Stream error");
         };
     }
 
+    /**
+     * Event triggered on Pearl stream hit
+     */
     //% block="on Pearl stream hit"
-    //% blockNamespace="EnderNet"
-    //% weight=65
-    export function onPearlHit(handler: () => void): void {
+    //% draggableParameters="reporter"
+    export function onPearlHit(handler: (pearlData: string) => void): void {
         pearlStreamHandler = handler;
     }
 
-    //% block="last Pearl data"
-    //% blockNamespace="EnderNet"
-    //% weight=64
-    export function getLastPearlData(): string {
-        return lastPearlData;
-    }
-
-    //% block="on Endermite (stream error)"
-    //% blockNamespace="EnderNet"
-    //% weight=60
-    export function onEndermite(handler: () => void): void {
+    /**
+     * Event triggered on Endermite error
+     */
+    //% block="on Endermite error"
+    //% draggableParameters="reporter"
+    export function onEndermite(handler: (errorMsg: string) => void): void {
         pearlErrorHandler = handler;
     }
 
-    //% block="last Endermite error"
-    //% blockNamespace="EnderNet"
-    //% weight=59
-    export function getLastEndermiteError(): string {
-        return lastPearlError;
+    /**
+     * Disconnect from EnderNet
+     */
+    //% block="disconnect EnderNet"
+    export function disconnect(): void {
+        if (ws) ws.close();
+        if (pearlSource) pearlSource.close();
+        ws = null;
+        pearlSource = null;
     }
 
-    export function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
-        const target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
+    function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
+        let target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
         fetch(target, { method: "GET" })
             .then(function (res: any) {
-                const status = res.status;
+                let status = res.status;
                 res.text().then(function (body: string) {
                     if (onResponse) onResponse(body, status);
                 });
@@ -226,15 +197,15 @@ namespace Endernet {
             });
     }
 
-    export function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
-        const target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
+    function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
+        let target = (url.indexOf("http") === 0) ? url : httpBaseUrl + url;
         fetch(target, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: body
         })
             .then(function (res: any) {
-                const status = res.status;
+                let status = res.status;
                 res.text().then(function (text: string) {
                     if (onResponse) onResponse(text, status);
                 });
@@ -244,7 +215,7 @@ namespace Endernet {
             });
     }
 
-    export function wsConnect(url: string, id: string, worldId: string): void {
+    function wsConnect(url: string, id: string, worldId: string): void {
         if (ws) ws.close();
         clientId = id;
         currentWorldId = worldId;
@@ -262,22 +233,16 @@ namespace Endernet {
 
         ws.onmessage = function (ev: any) {
             try {
-                const data = JSON.parse(ev.data);
+                let data = JSON.parse(ev.data);
                 if (data.type === "player_join") {
-                    lastJoinedPlayer = data.from;
-                    if (wsJoinHandler) wsJoinHandler();
+                    if (joinHandler) joinHandler(data.from);
                 } else if (data.type === "player_leave") {
-                    lastLeftPlayer = data.from;
-                    if (wsLeaveHandler) wsLeaveHandler();
+                    if (leaveHandler) leaveHandler(data.from);
                 } else {
-                    lastReceivedMessage = data.message;
-                    lastReceivedSender = data.from;
-                    if (wsMsgHandler) wsMsgHandler();
+                    if (messageHandler) messageHandler(data.message, data.from);
                 }
             } catch (e) {
-                lastReceivedMessage = ev.data;
-                lastReceivedSender = "raw";
-                if (wsMsgHandler) wsMsgHandler();
+                if (messageHandler) messageHandler(ev.data, "raw");
             }
         };
     }

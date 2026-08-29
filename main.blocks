@@ -1,1 +1,3 @@
-
+<xml xmlns="https://developers.google.com/blockly/xml"><variables></variables><comment id=";U)^i5?;mhF~X8H:Kzs_" x="225" y="20" w="210" h="120">
+supposed to be empty.
+</comment><block type="pxt-on-start" id="xRRgvHNlG#rZ^u`HECiY" x="20" y="20"><statement name="HANDLER"><block type="minecraftSay" id="u:j_yZWfe|f5K,-%=dR`"><value name="message"><shadow type="text" id="uPt-rN|:(c-5=-=;3Ix,"><field name="TEXT">pluh</field></shadow></value></block></statement></block></xml>
