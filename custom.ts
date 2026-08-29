@@ -24,26 +24,33 @@ declare function setTimeout(handler: () => void, timeout: number): number;
  * Custom blocks for EnderNet
  */
 //% weight=100 color="#5a5cff" icon="\uf233" block="EnderNet"
+//% groups='["Connection", "Messaging", "Pearl Stream"]'
 namespace Endernet {
+    // ---- Shared connection state ----
     let ws: WebSocket = null;
     let pearlSource: EventSource = null;
     let currentWorldId = "default_world";
     let httpBaseUrl = "";
     let clientId = "";
 
-    // Lets disconnect() cancel an in-flight pairing poll loop.
+    // Bumped on every (re)connect/disconnect so stale async callbacks
+    // (pending fetches, poll loops, old socket events) know to no-op.
     let sessionToken = 0;
 
+    // ---- Shared event handlers ----
     let messageHandler: (msg: string, from: string) => void = null;
-    let joinHandler: (player: string) => void = null;
-    let leaveHandler: (player: string) => void = null;
+    let joinHandler: (playerName: string) => void = null;
+    let leaveHandler: (playerName: string) => void = null;
     let pearlStreamHandler: (data: string) => void = null;
     let pearlErrorHandler: (err: string) => void = null;
+
+    // ==================== Connection ====================
 
     /**
      * Connect to secure EnderNet server
      */
     //% block="connect secure EnderNet on server %hostUrl"
+    //% group="Connection"
     export function initSecureSession(hostUrl: string): void {
         httpBaseUrl = hostUrl;
 
@@ -102,90 +109,12 @@ namespace Endernet {
     }
 
     /**
-     * Broadcast a message to the server
-     */
-    //% block="broadcast message %msg"
-    export function wsSend(msg: string): void {
-        if (ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({
-                type: "chat",
-                worldId: currentWorldId,
-                from: clientId,
-                message: msg
-            }));
-        }
-    }
-
-    /**
-     * Event triggered when a message is received
-     */
-    //% block="on message received"
-    //% draggableParameters="reporter"
-    export function onMessageReceived(handler: (msg: string, fromUser: string) => void): void {
-        messageHandler = handler;
-    }
-
-    /**
-     * Event triggered when a player joins
-     */
-    //% block="on player joined"
-    //% draggableParameters="reporter"
-    export function onPlayerJoined(handler: (joinedPlayer: string) => void): void {
-        joinHandler = handler;
-    }
-
-    /**
-     * Event triggered when a player leaves
-     */
-    //% block="on player left"
-    //% draggableParameters="reporter"
-    export function onPlayerLeft(handler: (leftPlayer: string) => void): void {
-        leaveHandler = handler;
-    }
-
-    /**
-     * Throw a Pearl stream to a world
-     */
-    //% block="throw Pearl stream to world %worldId"
-    export function pearlThrow(worldId: string): void {
-        if (pearlSource) pearlSource.close();
-
-        let streamUrl = joinUrl(httpBaseUrl, "pearl/stream/" + worldId);
-        pearlSource = new EventSource(streamUrl);
-
-        pearlSource.onmessage = function (ev: any) {
-            if (pearlStreamHandler) pearlStreamHandler(ev.data);
-        };
-
-        pearlSource.onerror = function (err: any) {
-            if (pearlErrorHandler) pearlErrorHandler("Endermite spawned: Stream error");
-        };
-    }
-
-    /**
-     * Event triggered on Pearl stream hit
-     */
-    //% block="on Pearl stream hit"
-    //% draggableParameters="reporter"
-    export function onPearlHit(handler: (pearlData: string) => void): void {
-        pearlStreamHandler = handler;
-    }
-
-    /**
-     * Event triggered on Endermite error
-     */
-    //% block="on Endermite error"
-    //% draggableParameters="reporter"
-    export function onEndermite(handler: (errorMsg: string) => void): void {
-        pearlErrorHandler = handler;
-    }
-
-    /**
      * Disconnect from EnderNet
      */
     //% block="disconnect EnderNet"
+    //% group="Connection"
     export function disconnect(): void {
-        // Invalidate any in-flight pairing poll / pending requests.
+        // Invalidate any in-flight pairing poll / pending requests / old socket events.
         sessionToken++;
 
         if (ws) {
@@ -209,6 +138,98 @@ namespace Endernet {
         pearlStreamHandler = null;
         pearlErrorHandler = null;
     }
+
+    // ==================== Messaging ====================
+
+    /**
+     * Broadcast a message to the server
+     */
+    //% block="broadcast message %msg"
+    //% group="Messaging"
+    export function wsSend(msg: string): void {
+        if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({
+                type: "chat",
+                worldId: currentWorldId,
+                from: clientId,
+                message: msg
+            }));
+        }
+    }
+
+    /**
+     * Event triggered when a message is received
+     */
+    //% block="on message received"
+    //% draggableParameters="reporter"
+    //% group="Messaging"
+    export function onMessageReceived(handler: (msg: string, fromUser: string) => void): void {
+        messageHandler = handler;
+    }
+
+    /**
+     * Event triggered when a player joins
+     */
+    //% block="on player joined"
+    //% draggableParameters="reporter"
+    //% group="Messaging"
+    export function onPlayerJoined(handler: (joinedPlayer: string) => void): void {
+        joinHandler = handler;
+    }
+
+    /**
+     * Event triggered when a player leaves
+     */
+    //% block="on player left"
+    //% draggableParameters="reporter"
+    //% group="Messaging"
+    export function onPlayerLeft(handler: (leftPlayer: string) => void): void {
+        leaveHandler = handler;
+    }
+
+    // ==================== Pearl Stream ====================
+
+    /**
+     * Throw a Pearl stream to a world
+     */
+    //% block="throw Pearl stream to world %worldId"
+    //% group="Pearl Stream"
+    export function pearlThrow(worldId: string): void {
+        if (pearlSource) pearlSource.close();
+
+        let streamUrl = joinUrl(httpBaseUrl, "pearl/stream/" + worldId);
+        pearlSource = new EventSource(streamUrl);
+
+        pearlSource.onmessage = function (ev: any) {
+            if (pearlStreamHandler) pearlStreamHandler(ev.data);
+        };
+
+        pearlSource.onerror = function (err: any) {
+            if (pearlErrorHandler) pearlErrorHandler("Endermite spawned: Stream error");
+        };
+    }
+
+    /**
+     * Event triggered on Pearl stream hit
+     */
+    //% block="on Pearl stream hit"
+    //% draggableParameters="reporter"
+    //% group="Pearl Stream"
+    export function onPearlHit(handler: (pearlData: string) => void): void {
+        pearlStreamHandler = handler;
+    }
+
+    /**
+     * Event triggered on Endermite error
+     */
+    //% block="on Endermite error"
+    //% draggableParameters="reporter"
+    //% group="Pearl Stream"
+    export function onEndermite(handler: (errorMsg: string) => void): void {
+        pearlErrorHandler = handler;
+    }
+
+    // ==================== Internal helpers (no blocks) ====================
 
     // Joins a base URL and a path with exactly one slash between them,
     // regardless of whether either side already has one.
