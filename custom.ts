@@ -29,7 +29,7 @@ namespace Endernet {
     // ---- Shared connection state ----
     let ws: WebSocket = null;
     let pearlSource: EventSource = null;
-    let currentWorldId = "default_world";
+    let currentWorldId = "";
     let httpBaseUrl = "";
     let clientId = "";
 
@@ -44,6 +44,11 @@ namespace Endernet {
     let pearlStreamHandler: (data: string) => void = null;
     let pearlErrorHandler: (err: string) => void = null;
 
+    // Helper using MakeCode's built-in randint
+    function getRandomWorldId(): string {
+        return "" + randint(1, 10);
+    }
+
     // ==================== Connection ====================
 
     /**
@@ -53,6 +58,7 @@ namespace Endernet {
     //% group="Connection"
     export function initSecureSession(hostUrl: string): void {
         httpBaseUrl = hostUrl;
+        currentWorldId = getRandomWorldId();
 
         // Bump the token so any previous pairing loop (or connection)
         // recognizes it's stale and stops acting.
@@ -85,7 +91,7 @@ namespace Endernet {
                             if (sessionData.status === "claimed") {
                                 isHandshakeComplete = true;
                                 let realTag = sessionData.verifiedGamertag;
-                                let world = sessionData.worldId;
+                                let world = sessionData.worldId || currentWorldId;
 
                                 player.say("§a[EnderNet] Verified as §f" + realTag + " §ain world §f" + world);
 
@@ -114,7 +120,6 @@ namespace Endernet {
     //% block="disconnect EnderNet"
     //% group="Connection"
     export function disconnect(): void {
-        // Invalidate any in-flight pairing poll / pending requests / old socket events.
         sessionToken++;
 
         if (ws) {
@@ -231,8 +236,6 @@ namespace Endernet {
 
     // ==================== HTTP Requests ====================
 
-    // Joins a base URL and a path with exactly one slash between them,
-    // regardless of whether either side already has one.
     function joinUrl(base: string, path: string): string {
         let baseHasSlash = base.charAt(base.length - 1) === "/";
         let pathHasSlash = path.charAt(0) === "/";
@@ -290,7 +293,7 @@ namespace Endernet {
             });
     }
 
-    // ==================== Internal helpers (no blocks) ====================
+    // ==================== Internal helpers ====================
 
     function wsConnect(url: string, id: string, worldId: string): void {
         if (ws) ws.close();
