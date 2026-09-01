@@ -18,6 +18,7 @@ declare class EventSource {
 
 declare const JSON: any;
 declare const fetch: any;
+declare const Date: any;
 declare function setTimeout(handler: () => void, timeout: number): number;
 
 /**
@@ -44,10 +45,15 @@ namespace Endernet {
     let pearlStreamHandler: (data: string) => void = null;
     let pearlErrorHandler: (err: string) => void = null;
     let httpResponseHandler: (body: string, status: number) => void = null;
+    let pingResponseHandler: (latencyMs: number, status: number) => void = null;
 
     // Helper using MakeCode's built-in randint
     function getRandomWorldId(): string {
         return "" + randint(1, 10);
+    }
+
+    function getTimestampMs(): number {
+        return Date.now();
     }
 
     // ==================== Connection ====================
@@ -142,6 +148,7 @@ namespace Endernet {
         pearlStreamHandler = null;
         pearlErrorHandler = null;
         httpResponseHandler = null;
+        pingResponseHandler = null;
     }
 
     // ==================== Messaging ====================
@@ -308,6 +315,31 @@ namespace Endernet {
     }
 
     /**
+     * Measure ping latency to an HTTP endpoint
+     */
+    //% block="HTTP ping %url"
+    //% group="HTTP Requests"
+    export function httpPing(url: string): void {
+        let startTime = getTimestampMs();
+        let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
+
+        fetch(target, { method: "GET" })
+            .then(function (res: any) {
+                let latency = getTimestampMs() - startTime;
+                let status = res.status;
+                if (pingResponseHandler) {
+                    pingResponseHandler(latency, status);
+                }
+            })
+            .catch(function (err: any) {
+                let latency = getTimestampMs() - startTime;
+                if (pingResponseHandler) {
+                    pingResponseHandler(latency, 0);
+                }
+            });
+    }
+
+    /**
      * Event triggered when an HTTP request receives a response
      */
     //% block="on HTTP response"
@@ -315,6 +347,16 @@ namespace Endernet {
     //% group="HTTP Requests"
     export function onHttpResponse(handler: (body: string, status: number) => void): void {
         httpResponseHandler = handler;
+    }
+
+    /**
+     * Event triggered when an HTTP ping finishes
+     */
+    //% block="on HTTP ping response"
+    //% draggableParameters="reporter"
+    //% group="HTTP Requests"
+    export function onHttpPing(handler: (latencyMs: number, status: number) => void): void {
+        pingResponseHandler = handler;
     }
 
     // ==================== Internal helpers ====================
