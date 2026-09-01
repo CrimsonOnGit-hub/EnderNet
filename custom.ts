@@ -43,6 +43,7 @@ namespace Endernet {
     let leaveHandler: (playerName: string) => void = null;
     let pearlStreamHandler: (data: string) => void = null;
     let pearlErrorHandler: (err: string) => void = null;
+    let httpResponseHandler: (body: string, status: number) => void = null;
 
     // Helper using MakeCode's built-in randint
     function getRandomWorldId(): string {
@@ -60,12 +61,10 @@ namespace Endernet {
         httpBaseUrl = hostUrl;
         currentWorldId = getRandomWorldId();
 
-        // Bump the token so any previous pairing loop (or connection)
-        // recognizes it's stale and stops acting.
         sessionToken++;
         let myToken = sessionToken;
 
-        httpPost("/api/auth/request-code", "{}", function (body: string, status: number) {
+        internalHttpPost("/api/auth/request-code", "{}", function (body: string, status: number) {
             if (myToken !== sessionToken) return;
 
             if (status === 200) {
@@ -83,7 +82,7 @@ namespace Endernet {
                 let pollStatus = function () {
                     if (myToken !== sessionToken || isHandshakeComplete) return;
 
-                    httpGet("/api/auth/status/" + code, function (statusBody: string, sStatus: number) {
+                    internalHttpGet("/api/auth/status/" + code, function (statusBody: string, sStatus: number) {
                         if (myToken !== sessionToken || isHandshakeComplete) return;
 
                         if (sStatus === 200) {
@@ -142,6 +141,7 @@ namespace Endernet {
         leaveHandler = null;
         pearlStreamHandler = null;
         pearlErrorHandler = null;
+        httpResponseHandler = null;
     }
 
     // ==================== Messaging ====================
@@ -249,13 +249,7 @@ namespace Endernet {
         }
     }
 
-    /**
-     * Send a GET request to a path on the EnderNet server (or a full URL)
-     */
-    //% block="HTTP GET %url and store response in %onResponse"
-    //% draggableParameters="reporter"
-    //% group="HTTP Requests"
-    export function httpGet(url: string, onResponse: (body: string, status: number) => void): void {
+    function internalHttpGet(url: string, onResponse: (body: string, status: number) => void): void {
         let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, { method: "GET" })
             .then(function (res: any) {
@@ -269,13 +263,7 @@ namespace Endernet {
             });
     }
 
-    /**
-     * Send a POST request with a body to a path on the EnderNet server (or a full URL)
-     */
-    //% block="HTTP POST %url with body %body and store response in %onResponse"
-    //% draggableParameters="reporter"
-    //% group="HTTP Requests"
-    export function httpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
+    function internalHttpPost(url: string, body: string, onResponse: (body: string, status: number) => void): void {
         let target = (url.indexOf("http") === 0) ? url : joinUrl(httpBaseUrl, url);
         fetch(target, {
             method: "POST",
@@ -291,6 +279,42 @@ namespace Endernet {
             .catch(function (err: any) {
                 if (onResponse) onResponse("Error: " + err, 0);
             });
+    }
+
+    /**
+     * Send an HTTP GET request
+     */
+    //% block="HTTP GET %url"
+    //% group="HTTP Requests"
+    export function httpGet(url: string): void {
+        internalHttpGet(url, function (body: string, status: number) {
+            if (httpResponseHandler) {
+                httpResponseHandler(body, status);
+            }
+        });
+    }
+
+    /**
+     * Send an HTTP POST request with a JSON body
+     */
+    //% block="HTTP POST %url with body %body"
+    //% group="HTTP Requests"
+    export function httpPost(url: string, body: string): void {
+        internalHttpPost(url, body, function (resBody: string, status: number) {
+            if (httpResponseHandler) {
+                httpResponseHandler(resBody, status);
+            }
+        });
+    }
+
+    /**
+     * Event triggered when an HTTP request receives a response
+     */
+    //% block="on HTTP response"
+    //% draggableParameters="reporter"
+    //% group="HTTP Requests"
+    export function onHttpResponse(handler: (body: string, status: number) => void): void {
+        httpResponseHandler = handler;
     }
 
     // ==================== Internal helpers ====================
